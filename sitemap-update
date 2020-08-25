@@ -1,0 +1,75 @@
+#!/usr/bin/env zsh
+API=http://[::1]:3000
+SITEMAP_INDEX_TEMP_FILE=sitemap-index-temp.xml
+SITEMAP_TEMP_FILE=sitemap-temp.xml
+
+BLOCK_TIP_HEIGHT="$(curl -s ${API}/blocks/tip/height)"
+BLOCK_HEIGHT=0
+BLOCK_PER_FILE=50000
+
+FILE_TOTAL="$(($BLOCK_TIP_HEIGHT / $BLOCK_PER_FILE))"
+FILE_START=0
+FILE_STOP="${FILE_TOTAL}"
+FILE="${FILE_START}"
+
+echo "${BLOCK_TIP_HEIGHT} blocks"
+echo "${BLOCK_PER_FILE} blocks per sitemap"
+echo "${FILE_TOTAL} total sitemaps"
+
+echo '<?xml version="1.0" encoding="UTF-8"?>' > "${SITEMAP_INDEX_TEMP_FILE}"
+echo '<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' >> "${SITEMAP_INDEX_TEMP_FILE}"
+
+until [ "${FILE}" = "${FILE_STOP}" ];do
+
+BLOCK_HEIGHT=$(((($FILE + 1) * $BLOCK_PER_FILE) - 1))
+if [ "${BLOCK_HEIGHT}" -gt "${BLOCK_TIP_HEIGHT}" ];then
+	BLOCK_HEIGHT="${BLOCK_TIP_HEIGHT}"
+fi
+BLOCK_HASH=$(curl -s ${API}/block-height/${BLOCK_HEIGHT})
+#BLOCK=$(curl -s ${API}/block/${BLOCK_HASH})
+#BLOCK_TIMESTAMP=$(echo "${BLOCK}"|sed -e 's/.*timestamp.://' -e 's/,.*//')
+
+SITEMAP_FILE_DECIMAL=$(printf "sitemap/sitemap%02d.xml" "${FILE}")
+SITEMAP_FILE=${SITEMAP_FILE_DECIMAL}
+#SITEMAP_FILE=$(echo ${SITEMAP_FILE_DECIMAL} | sed -e 's/0/a/g' -e 's/1/b/g' -e 's/2/c/g' -e 's/3/d/g' -e 's/4/e/g' -e 's/5/f/g' -e 's/6/g/g' -e 's/7/h/g' -e 's/8/i/g' -e 's/9/j/g')
+#SITEMAP_LASTMOD=$(date -r "${BLOCK_TIMESTAMP}" +"%Y-%m-%dT%H:%M:%SZ")
+
+if [ ! -f "${SITEMAP_FILE}" ] || [ "${BLOCK_HEIGHT}" -gt $(($BLOCK_TIP_HEIGHT - 2000)) ];then
+
+    BLOCK_STOP="$((($BLOCK_HEIGHT - ${BLOCK_PER_FILE}) + 1))"
+    echo "generating ${SITEMAP_FILE} for block ${BLOCK_STOP} ~ ${BLOCK_HEIGHT}"
+
+    echo '<?xml version="1.0" encoding="UTF-8"?>' > "${SITEMAP_TEMP_FILE}"
+    echo '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9 http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd">' >> "${SITEMAP_TEMP_FILE}"
+
+    while [ "${BLOCK_HEIGHT}" -ge "${BLOCK_STOP}" ];do
+
+        BLOCK_HASH=$(curl -s ${API}/block-height/${BLOCK_HEIGHT})
+        #BLOCK=$(curl -s ${API}/block/${BLOCK_HASH})
+        #BLOCK_TIMESTAMP=$(echo "${BLOCK}"|sed -e 's/.*timestamp.://' -e 's/,.*//')
+        #BLOCK_LASTMOD=$(date -r "${BLOCK_TIMESTAMP}" +"%Y-%m-%dT%H:%M:%SZ")
+
+        #echo '<url>' >> "${SITEMAP_TEMP_FILE}"
+        echo "<url><loc>https://mempool.space/block/${BLOCK_HASH}</loc></url>" >> "${SITEMAP_TEMP_FILE}"
+        #echo "<lastmod>${BLOCK_LASTMOD}</lastmod>" >> "${SITEMAP_TEMP_FILE}"
+        #echo '</url>' >> "${SITEMAP_TEMP_FILE}"
+
+        ((BLOCK_HEIGHT--))
+    done
+
+    echo '</urlset>' >> "${SITEMAP_TEMP_FILE}"
+    mv "${SITEMAP_TEMP_FILE}" "${SITEMAP_FILE}"
+fi
+
+echo '<sitemap>' >> "${SITEMAP_INDEX_TEMP_FILE}"
+echo "<loc>https://mempool.space/${SITEMAP_FILE}</loc>" >> "${SITEMAP_INDEX_TEMP_FILE}"
+#echo "<lastmod>${SITEMAP_LASTMOD}</lastmod>" >> "${SITEMAP_INDEX_TEMP_FILE}"
+echo '</sitemap>' >> "${SITEMAP_INDEX_TEMP_FILE}"
+
+((FILE++))
+
+done
+
+echo '</sitemapindex>' >> "${SITEMAP_INDEX_TEMP_FILE}"
+
+mv "${SITEMAP_INDEX_TEMP_FILE}" "sitemap.xml"
